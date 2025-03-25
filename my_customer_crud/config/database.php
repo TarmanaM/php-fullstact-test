@@ -1,9 +1,11 @@
 <?php
-require __DIR__ . '/../../vendor/autoload.php';
+
+require __DIR__ . '/../vendor/autoload.php';
 
 use Dotenv\Dotenv;
 
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../');
+$dotenv = Dotenv::createImmutable(dirname(__DIR__, 1));
+
 $dotenv->load();
 
 $dsn = "pgsql:host={$_ENV['DB_HOST']};port={$_ENV['DB_PORT']};dbname={$_ENV['DB_NAME']};";

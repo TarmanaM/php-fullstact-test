@@ -1,5 +1,9 @@
 <?php
-require __DIR__ . '/../config/database.php';
+require __DIR__ . '/../../config/database.php';
+require __DIR__ . '/../../vendor/autoload.php';
+
+
+
 
 class ClientController {
     private $pdo;
@@ -11,45 +15,67 @@ class ClientController {
     }
 
     public function getAllClients() {
-        $cachedClients = $this->redis->get('clients_all');
+        $cacheKey = 'clients_all';
+        
+        // Cek cache di Redis
+        $cachedClients = $this->redis->get($cacheKey);
         if ($cachedClients) {
             return json_decode($cachedClients, true);
         }
 
-        $stmt = $this->pdo->query("SELECT * FROM my_client WHERE deleted_at IS NULL");
-        $clients = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        try {
+            $stmt = $this->pdo->query("SELECT * FROM my_client WHERE deleted_at IS NULL");
+            $clients = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $this->redis->set('clients_all', json_encode($clients));
+            // Simpan hasil ke Redis dengan waktu kedaluwarsa (misal: 1 jam)
+            $this->redis->setex($cacheKey, 3600, json_encode($clients));
 
-        return $clients;
+            return $clients;
+        } catch (PDOException $e) {
+            return ['error' => $e->getMessage()];
+        }
     }
 
     public function createClient($data) {
-        $stmt = $this->pdo->prepare("INSERT INTO my_client (name, slug, client_prefix) VALUES (?, ?, ?)");
-        $stmt->execute([$data['name'], $data['slug'], $data['client_prefix']]);
+        try {
+            $stmt = $this->pdo->prepare("INSERT INTO my_client (name, slug, client_prefix) VALUES (?, ?, ?)");
+            $stmt->execute([$data['name'], $data['slug'], $data['client_prefix']]);
 
-        $this->redis->set($data['slug'], json_encode($data));
+            // Hapus cache agar data terbaru bisa diambil
+            $this->redis->del('clients_all');
 
-        return "Client Created";
+            return ['message' => "Client Created"];
+        } catch (PDOException $e) {
+            return ['error' => $e->getMessage()];
+        }
     }
 
     public function updateClient($slug, $data) {
-        $stmt = $this->pdo->prepare("UPDATE my_client SET name = ?, client_prefix = ?, updated_at = NOW() WHERE slug = ?");
-        $stmt->execute([$data['name'], $data['client_prefix'], $slug]);
+        try {
+            $stmt = $this->pdo->prepare("UPDATE my_client SET name = ?, client_prefix = ?, updated_at = NOW() WHERE slug = ?");
+            $stmt->execute([$data['name'], $data['client_prefix'], $slug]);
 
-        $this->redis->del($slug);
-        $this->redis->set($slug, json_encode($data));
+            // Update cache
+            $this->redis->del('clients_all');
 
-        return "Client Updated";
+            return ['message' => "Client Updated"];
+        } catch (PDOException $e) {
+            return ['error' => $e->getMessage()];
+        }
     }
 
     public function deleteClient($slug) {
-        $stmt = $this->pdo->prepare("UPDATE my_client SET deleted_at = NOW() WHERE slug = ?");
-        $stmt->execute([$slug]);
+        try {
+            $stmt = $this->pdo->prepare("UPDATE my_client SET deleted_at = NOW() WHERE slug = ?");
+            $stmt->execute([$slug]);
 
-        $this->redis->del($slug);
+            // Hapus dari cache
+            $this->redis->del('clients_all');
 
-        return "Client Deleted";
+            return ['message' => "Client Deleted"];
+        } catch (PDOException $e) {
+            return ['error' => $e->getMessage()];
+        }
     }
 }
 ?>
